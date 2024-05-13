@@ -4,6 +4,9 @@ import { AuthRegisterDto } from './dto/auth-register.dto';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
 import { MailerService } from '@nestjs-modules/mailer';
+import { UserEntity } from 'src/user/entity/user.entity';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 
 @Injectable()
 export class AuthService {
@@ -11,9 +14,15 @@ export class AuthService {
     private issuer = 'login';
     private audience = 'users'
 
-    constructor(private readonly mailer: MailerService, private readonly JWTService: JwtService, private readonly userService: UserService) { }
+    constructor(
+        private readonly mailer: MailerService,
+        private readonly JWTService: JwtService,
+        private readonly userService: UserService,
+        @InjectRepository(UserEntity)
+        private userRepository: Repository<UserEntity>
+    ) { }
 
-    createToken(user: User) {
+    createToken(user: UserEntity) {
         return {
             accessToken: this.JWTService.sign({
                 id: user.id,
@@ -53,7 +62,8 @@ export class AuthService {
     }
 
     async login(email: string, password: string) {
-        const user = await this.prisma.user.findFirst({
+
+        const user = await this.userRepository.findOne({
             where: {
                 email
             }
@@ -74,7 +84,7 @@ export class AuthService {
 
     async forget(email: string) {
 
-        const user = await this.prisma.user.findFirst({
+        const user = await this.userRepository.findOne({
             where: {
                 email
             }
@@ -120,21 +130,16 @@ export class AuthService {
             });
 
             // vamos extrair o Id do token
-            
+
             if (isNaN(Number(data.id))) {
                 throw new BadRequestException('token invalido');
             }
 
             password = await bcrypt.hash(password, await bcrypt.genSalt())
 
-            const user = await this.prisma.user.update({
-                where: {
-                    id: Number(data.id)
-                },
-                data: {
-                    password
-                }
-            });
+            await this.userRepository.update(Number(data.id), {password});
+
+            const user  = await this.userService.readOne(Number(data.id))
 
             return this.createToken(user);
 
